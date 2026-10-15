@@ -221,3 +221,7 @@ __marimo__/
 
 # Claude Code personal notes
 CLAUDE.local.md
+
+# PitWall data and run logs
+data/cache/
+logs/
