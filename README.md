@@ -1,9 +1,14 @@
 # boxbox
+
+## Project Structure
+
+```
 pitwall/
-├── data/          # cached FastF1 snapshots
-├── sim/           # simulator, rival policies
-├── agents/        # one file per agent + orchestration graph
-├── tools/         # query_laps, simulate, run_python
-├── baselines/     # rule-based, single-agent
-├── eval/          # run configs, metrics, ablations
-└── notebooks/     # exploration, plots
+├── data/          # Cached FastF1 snapshots, sliced per lap
+├── sim/           # Race simulator and rival policies
+├── agents/        # One file per agent, plus the orchestration graph
+├── tools/         # Agent tools: query_laps, simulate, run_python
+├── baselines/     # Rule-based and single-agent baselines
+├── eval/          # Run configs, metrics, and ablations
+└── notebooks/     # Exploration and plots
+```
