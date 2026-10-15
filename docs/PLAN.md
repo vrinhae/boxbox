@@ -13,8 +13,8 @@ Owners: **Valarie**, **Aidan**. Update this file in the same PR as the work it d
 Done when `get_state("2023_bahrain", 20, "VER")` returns a correct snapshot and the test passes.
 
 ### Valarie: setup + plumbing
-- [ ] `pyproject.toml` (Python 3.11+, fastf1, pandas, pyarrow, pytest, LLM SDK + framework), setup steps in README
-- [ ] `.gitignore` entry for `data/cache/`
+- [x] `pyproject.toml` (Python 3.11+, fastf1, pandas, pyarrow, pytest, LLM SDK + framework), setup steps in README
+- [x] `.gitignore` entry for `data/cache/` and `logs/`
 - [ ] `tools/jsonl_log.py`: JSONL logger (timestamp, race, lap, agent, tool, args, result)
 - [ ] `tools/query.py`: `query_laps`, `get_race_control`, built against a hand-made fake `LapSnapshot`
 - [ ] One LLM call that uses a tool, logged to JSONL
@@ -58,4 +58,5 @@ Weeks 2+ are a draft; reassign as needed.
 - 2026-10-15: First race is 2023 Bahrain (dry, normal strategies).
 - 2026-10-15: `LapSnapshot` is frozen and rejects records after `lap` on construction.
 - 2026-10-15: Strategist uses deterministic `simulate` calls for Must tier; Monte Carlo is stretch.
-- TODO: pick LLM provider + agent framework (Valarie, week 1).
+- 2026-10-15: LLM calls go through OpenRouter via the `openai` SDK; model set by `PITWALL_MODEL` in `.env`.
+- TODO: agent framework (own loop vs LangGraph); confirm with Aidan.
