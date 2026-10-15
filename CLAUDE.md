@@ -25,3 +25,5 @@ Multi-agent LLM system that makes lap-by-lap F1 pit-stop decisions on replayed h
 
 ## Layout
 data/ sim/ agents/ tools/ baselines/ eval/ notebooks/
+## Plan
+See docs/PLAN.md for this week's tasks, owners, interfaces, and decisions. Update it in the same PR as the work.
