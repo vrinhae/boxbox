@@ -28,3 +28,4 @@ include = ["agents*", "baselines*", "data*", "eval*", "sim*", "tools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

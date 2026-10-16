@@ -15,7 +15,7 @@ Done when `get_state("2023_bahrain", 20, "VER")` returns a correct snapshot and 
 ### Valarie: setup + plumbing
 - [x] `pyproject.toml` (Python 3.11+, fastf1, pandas, pyarrow, pytest, LLM SDK + framework), setup steps in README
 - [x] `.gitignore` entry for `data/cache/` and `logs/`
-- [ ] `tools/jsonl_log.py`: JSONL logger (timestamp, race, lap, event type + fields; see Replay viewer)
+- [x] `tools/jsonl_log.py`: JSONL logger (timestamp, race, lap, event type + fields; see Replay viewer)
 - [ ] `tools/query.py`: `query_laps`, `get_race_control`, built against a hand-made fake `LapSnapshot`
 - [ ] One LLM call that uses a tool, logged to JSONL
 
@@ -37,7 +37,8 @@ def query_laps(snap: LapSnapshot, driver: str | None = None, last_n: int | None 
 def get_race_control(snap: LapSnapshot) -> list[dict]: ...
 
 # tools/jsonl_log.py (Valarie)
-def log_event(race_id: str, lap: int, event: str, **fields) -> None: ...  # event types: see Replay viewer
+def log_event(race_id: str, lap: int, event: str, *, run_id: str | None = None, **fields) -> None: ...  # writes logs/<run_id>.jsonl; event types: see Replay viewer
+def read_events(path) -> list[dict]: ...
 ```
 
 ## Roadmap
