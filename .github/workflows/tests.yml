@@ -1,5 +1,5 @@
-# Runs pytest on every PR and on pushes to main. The job name "pytest" is what
-# the main branch ruleset's "Require status checks to pass" should point at.
+# Runs pytest on every PR and on pushes to main. The checks show up as
+# "pytest (3.11)" and "pytest (3.12)"; require both in the main branch ruleset.
 name: tests
 
 on:
