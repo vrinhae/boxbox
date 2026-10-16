@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PitWall Replay Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a timing-screen console. Header with run toggle + lap scrubber, then race order beside the agent panel, then full-width strategy timeline and gap chart, then a reading guide. */
+:root {
+  --bg: #eef0f4;
+  --panel: #ffffff;
+  --line: #d9dde5;
+  --fg: #141820;
+  --muted: #5a6373;
+  --accent: #7b3fe4;      /* F1 timing purple: used for the ego driver */
+  --accent-soft: #7b3fe41f;
+  --box: #d9480f;
+  --soft: #e10600;
+  --medium: #e8b500;
+  --hard: #c9ced8;
+  --hard-stroke: #8a92a1;
+  --good: #1f8a4c;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1116; --panel: #161a21; --line: #272d37; --fg: #e6e9ef; --muted: #8b94a4;
+    --accent: #b18cff; --accent-soft: #b18cff24; --box: #ff8a3d;
+    --soft: #ff3b30; --medium: #ffd23f; --hard: #e9ecf1; --hard-stroke: #e9ecf1; --good: #4cc27e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --panel: #161a21; --line: #272d37; --fg: #e6e9ef; --muted: #8b94a4;
+  --accent: #b18cff; --accent-soft: #b18cff24; --box: #ff8a3d;
+  --soft: #ff3b30; --medium: #ffd23f; --hard: #e9ecf1; --hard-stroke: #e9ecf1; --good: #4cc27e;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.01em; text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; line-height: 1.1; }
+h2 { font-size: 20px; }
+h3 { font-size: 17px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.label { font-family: var(--font-display); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; color: var(--muted); }
+
+.example-note { font-size: 13px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 8px 12px; }
+
+/* Header */
+.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+.top .meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 13px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.seg button {
+  font: 600 13px var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 8px 14px; border: 0; background: transparent; color: var(--muted); cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+.seg button:focus-visible, .scrub button:focus-visible, input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.result { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; }
+.result b { font-family: var(--font-mono); font-weight: 600; }
+
+/* Scrubber */
+.scrub { display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.scrub button { font: 600 14px var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.lapread { font-family: var(--font-display); font-weight: 700; font-size: 24px; min-width: 7ch; }
+.lapread small { font-size: 15px; color: var(--muted); font-weight: 600; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.status { font: 700 12px var(--font-display); letter-spacing: 0.08em; padding: 3px 8px; border-radius: 4px; background: var(--good); color: var(--panel); }
+
+/* Panels */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; display: grid; gap: 10px; align-content: start; }
+.phead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tag { font: 700 12px var(--font-mono); color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 6px; }
+.phead .hint { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font: 600 11px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 5px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+td.name { font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.03em; }
+td.num, th.num { text-align: right; }
+tr.ego td { background: var(--accent-soft); }
+tr.ego td.name { color: var(--accent); }
+.tyre { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 3px solid; font: 700 10px var(--font-mono); color: var(--fg); }
+.tyre.SOFT { border-color: var(--soft); }
+.tyre.MEDIUM { border-color: var(--medium); }
+.tyre.HARD { border-color: var(--hard-stroke); }
+.pitflag { font: 700 10px var(--font-display); letter-spacing: 0.08em; color: var(--box); margin-left: 4px; }
+
+/* Agent panel */
+.trigger { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.chip { font: 600 11px var(--font-display); text-transform: uppercase; letter-spacing: 0.07em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+.agents { display: flex; flex-wrap: wrap; gap: 6px; }
+.msgs { display: grid; gap: 8px; }
+.msg { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; }
+.msg .who { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.msg .who .round { color: var(--box); }
+.msg.engineer { border-left-color: var(--accent); }
+.msg p { margin: 2px 0 0; max-width: 65ch; }
+.idle { color: var(--muted); font-size: 13px; }
+.decision { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
+.call { font: 700 18px var(--font-display); letter-spacing: 0.06em; padding: 2px 10px; border-radius: 4px; border: 2px solid var(--line); }
+.call.box { border-color: var(--box); color: var(--box); }
+.plan { font-size: 13px; display: grid; gap: 2px; }
+.plan ul { margin: 0; padding-left: 18px; color: var(--muted); }
+.counter { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+/* Charts */
+.chart { overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.chart text { fill: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.chart text.rowlab { fill: var(--fg); font-family: var(--font-display); font-weight: 600; font-size: 13px; }
+.chart text.rowlab.ego { fill: var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); align-items: center; }
+.sw { display: inline-block; width: 14px; height: 8px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.sw.line { height: 3px; }
+
+/* Guide */
+.guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 24px; }
+.guide article { display: grid; gap: 4px; align-content: start; }
+.guide p { margin: 0; color: var(--muted); max-width: 65ch; }
+.guide code { font-family: var(--font-mono); font-size: 12px; color: var(--fg); }
+.src { font-size: 12px; }
+
+@media (max-width: 860px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .scrub { grid-template-columns: auto 1fr; }
+  .scrub input { grid-column: 1 / -1; grid-row: 2; }
+  h1 { font-size: 26px; }
+}
+</style>
+
+<div class="wrap">
+  <div class="example-note">Mockup with <strong>made-up numbers</strong>: this shows what the viewer would look like, not real 2023 Bahrain results or real agent output. Drag the slider or press Play.</div>
+
+  <header class="top">
+    <div style="display:grid;gap:4px;min-width:0">
+      <span class="label">PitWall replay</span>
+      <h1>2023 Bahrain GP · LEC</h1>
+      <div class="meta"><span>Log: <span class="mono">logs/2023_bahrain_LEC_multi.jsonl</span></span><span>System: 4-agent, event-driven</span></div>
+    </div>
+    <div style="display:grid;gap:8px;justify-items:start">
+      <div class="seg" role="group" aria-label="Which run to show">
+        <button id="runAgent" aria-pressed="true">Agents' strategy</button>
+        <button id="runReal" aria-pressed="false">Real strategy</button>
+      </div>
+      <div class="result" id="result"></div>
+    </div>
+  </header>
+
+  <div class="scrub">
+    <button id="play" aria-label="Play replay">Play</button>
+    <div class="lapread"><span id="lapnum">1</span><small> / 57</small></div>
+    <input id="lap" type="range" min="1" max="57" value="15" aria-label="Lap">
+    <span class="status" id="status">GREEN</span>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="phead"><span class="tag">A</span><h2>Race order</h2><span class="hint">end of lap</span></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Pos</th><th>Driver</th><th class="num">Gap ahead</th><th class="num">Last lap</th><th>Tyre</th><th class="num">Age</th><th class="num">Stops</th></tr></thead>
+        <tbody id="order"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <div class="phead"><span class="tag">B</span><h2>Pit wall</h2><span class="counter mono" id="calls"></span></div>
+      <div id="agentpanel" style="display:grid;gap:10px"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="phead"><span class="tag">C</span><h2>Strategy timeline</h2><span class="hint">stints by compound · line = current lap</span></div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--soft)"></span>Soft</span>
+      <span><span class="sw" style="background:var(--medium)"></span>Medium</span>
+      <span><span class="sw" style="background:var(--hard);outline:1px solid var(--hard-stroke)"></span>Hard</span>
+    </div>
+    <div class="chart" id="timeline"></div>
+  </section>
+
+  <section class="panel">
+    <div class="phead"><span class="tag">D</span><h2>LEC gaps</h2><span class="hint">seconds to the car ahead and behind · dashed = LEC pit stop</span></div>
+    <div class="legend">
+      <span><span class="sw line" style="background:var(--accent)"></span>Gap to car ahead</span>
+      <span><span class="sw line" style="background:var(--muted)"></span>Gap to car behind</span>
+    </div>
+    <div class="chart" id="gaps"></div>
+  </section>
+
+  <section class="panel">
+    <h2>How to read this</h2>
+    <div class="guide">
+      <article>
+        <h3><span class="tag">A</span> Race order</h3>
+        <p>The timing screen at the end of the selected lap. LEC is the ego driver: the only car the agents control. Every other car replays its real race.</p>
+        <p class="src">From <code>lap_state</code> events</p>
+      </article>
+      <article>
+        <h3><span class="tag">B</span> Pit wall</h3>
+        <p>What happened inside the system on this lap: what triggered the Race Engineer, which agents it called, what they said, any send-back rounds, the plan and the final call. Most laps have no trigger, so no LLM calls are made. The counter shows the running total.</p>
+        <p class="src">From <code>route</code>, <code>agent_msg</code>, <code>plan</code>, <code>decision</code></p>
+      </article>
+      <article>
+        <h3><span class="tag">C</span> Strategy timeline</h3>
+        <p>Each bar is a stint, coloured by tyre. The top two rows put the agents' strategy for LEC next to what LEC really did, so you can see where they split.</p>
+        <p class="src">From <code>lap_state</code> + <code>decision</code></p>
+      </article>
+      <article>
+        <h3><span class="tag">D</span> Gaps</h3>
+        <p>Did the undercut work? Watch the gap to the car ahead after a stop. Switch to Real strategy at the top to compare the two runs.</p>
+        <p class="src">From <code>lap_state</code> events</p>
+      </article>
+    </div>
+  </section>
+</div>
+
+<script>
+// ---------- Fake race model (stands in for the real simulator + logs) ----------
+const LAPS = 57, PIT_LOSS = 22.0, EGO = "LEC";
+const COMP = { SOFT: { off: -0.6, deg: 0.13 }, MEDIUM: { off: 0.0, deg: 0.055 }, HARD: { off: 0.45, deg: 0.035 } };
+const DRIVERS = [
+  { code: "VER", team: "Red Bull",     pace: -1.00, strat: [["SOFT", 14], ["HARD", 36], ["MEDIUM", 57]] },
+  { code: "PER", team: "Red Bull",     pace: -0.50, strat: [["SOFT", 16], ["HARD", 37], ["MEDIUM", 57]] },
+  { code: "LEC", team: "Ferrari",      pace: -0.53, strat: [["SOFT", 18], ["HARD", 40], ["MEDIUM", 57]] },
+  { code: "SAI", team: "Ferrari",      pace: -0.38, strat: [["SOFT", 13], ["HARD", 34], ["SOFT", 57]] },
+  { code: "ALO", team: "Aston Martin", pace: -0.34, strat: [["SOFT", 15], ["HARD", 35], ["HARD", 57]] },
+  { code: "HAM", team: "Mercedes",     pace: -0.26, strat: [["SOFT", 12], ["HARD", 31], ["HARD", 57]] },
+  { code: "RUS", team: "Mercedes",     pace: -0.22, strat: [["SOFT", 12], ["HARD", 33], ["HARD", 57]] },
+  { code: "STR", team: "Aston Martin", pace: -0.05, strat: [["SOFT", 16], ["HARD", 39], ["MEDIUM", 57]] },
+];
+const AGENT_STRAT = [["SOFT", 15], ["HARD", 37], ["MEDIUM", 57]];
+
+function noise(i, lap) { const x = Math.sin(i * 97.13 + lap * 13.71) * 43758.5453; return (x - Math.floor(x) - 0.5) * 0.3; }
+
+function stintAt(strat, lap) {
+  let start = 1;
+  for (let s = 0; s < strat.length; s++) {
+    if (lap <= strat[s][1]) return { compound: strat[s][0], age: lap - start + 1, stint: s + 1, end: strat[s][1] };
+    start = strat[s][1] + 1;
+  }
+}
+
+function simulate(egoStrat) {
+  const cum = DRIVERS.map(() => 0);
+  const laps = [];
+  for (let lap = 1; lap <= LAPS; lap++) {
+    const rows = DRIVERS.map((d, i) => {
+      const strat = d.code === EGO ? egoStrat : d.strat;
+      const st = stintAt(strat, lap);
+      const c = COMP[st.compound];
+      let t = 96.0 + d.pace + c.off + c.deg * st.age + 0.035 * (LAPS - lap) + noise(i, lap);
+      if (lap === 1) t += 2.0 + i * 0.45;
+      const pitIn = st.end === lap && lap < LAPS;
+      if (pitIn) t += PIT_LOSS;
+      cum[i] += t;
+      return { code: d.code, team: d.team, last: t, compound: st.compound, age: st.age, stops: st.stint - 1, pitIn, cum: cum[i] };
+    });
+    const order = [...rows].sort((a, b) => a.cum - b.cum);
+    order.forEach((r, k) => {
+      r.pos = k + 1;
+      r.gapAhead = k === 0 ? null : r.cum - order[k - 1].cum;
+      r.gapBehind = k === order.length - 1 ? null : order[k + 1].cum - r.cum;
+    });
+    laps.push(order);
+  }
+  return laps;
+}
+
+const RUNS = {
+  agent: { laps: simulate(AGENT_STRAT), strat: AGENT_STRAT },
+  real: { laps: simulate(DRIVERS.find(d => d.code === EGO).strat), strat: DRIVERS.find(d => d.code === EGO).strat },
+};
+const egoAt = (run, lap) => RUNS[run].laps[lap - 1].find(r => r.code === EGO);
+const carAt = (run, lap, code) => RUNS[run].laps[lap - 1].find(r => r.code === code);
+
+// ---------- Fake agent log (what route / agent_msg / plan / decision events would hold) ----------
+const PLAN_A = {
+  main: "Box lap 18 → HARD, lap 40 → MEDIUM",
+  cont: ["Safety car before lap 14: box under SC", "Rival undercut threat > 0.6: cover next lap"],
+};
+const PLAN_B = {
+  main: "Box lap 15 → HARD, lap 37 → MEDIUM",
+  cont: ["Safety car before lap 30: box under SC, skip stop 2", "Medium cliff before lap 50: switch to HARD"],
+};
+const f1 = x => x.toFixed(1);
+
+const EVENTS = {
+  1: { trigger: "Race start", agents: ["Telemetry", "Rival", "Strategist"], msgs: [
+        ["Telemetry", 0, () => "No stint data yet. Prior from practice: soft deg about 0.13 s/lap. Confidence 0.40."],
+        ["Rival", 0, () => "PER (P2) and SAI likely to stop early. No undercut threat yet."],
+        ["Strategist", 0, () => "Committing Plan A: two stops, soft → hard → medium."],
+        ["Engineer", 0, () => "Plan A accepted. Stay out."]],
+      plan: PLAN_A, decision: "STAY OUT" },
+  8: { trigger: "Tyre age ≥ 8 on SOFT", agents: ["Telemetry"], msgs: [
+        ["Telemetry", 0, () => "Fitted deg 0.13 s/lap over 7 clean laps. No cliff detected. Confidence 0.62."],
+        ["Engineer", 0, () => "No belief change. Plan A holds."]],
+      decision: "STAY OUT" },
+  13: { trigger: "Rival pitted: SAI", agents: ["Rival"], msgs: [
+        ["Rival", 0, () => "SAI pitted from P4 and rejoins well behind, so no threat. PER pit probability in the next 3 laps: 0.71."],
+        ["Engineer", 0, () => "PER likely to stop soon. Flagging for Strategist next lap."]],
+      decision: "STAY OUT" },
+  14: { trigger: "Rival Modeler: PER pit probability > 0.7", agents: ["Strategist"], msgs: [
+        ["Strategist", 0, () => `Proposal: box lap 15 to undercut PER. Gap to PER ${f1(egoAt("agent", 14).gapAhead ?? 0)} s; fresh hards gain about 0.9 s/lap on his old softs.`],
+        ["Engineer", 1, () => "Sent back: check traffic on exit."],
+        ["Strategist", 1, () => "Sim says LEC rejoins behind SAI with clear air behind. Keep proposal."],
+        ["Engineer", 0, () => "Accepted. Revising to Plan A′."]],
+      plan: PLAN_B, decision: "BOX NEXT LAP" },
+  15: { trigger: "Committed pit stop", agents: [], msgs: [
+        ["Engineer", 0, () => "Box, box. Hard tyres."]],
+      decision: "BOX → HARD" },
+  16: { trigger: "Rival pitted: PER", agents: ["Rival"], msgs: [
+        ["Rival", 0, () => {
+          const e = egoAt("agent", 16), p = carAt("agent", 16, "PER");
+          return e.pos < p.pos ? `PER rejoined behind. Undercut worked: LEC ahead by ${f1(p.cum - e.cum)} s.` : `PER rejoined ahead by ${f1(e.cum - p.cum)} s. Undercut fell short.`;
+        }],
+        ["Engineer", 0, () => "Logged. Plan A′ holds."]],
+      decision: "STAY OUT" },
+  26: { trigger: "Tyre age ≥ 10 on HARD", agents: ["Telemetry"], msgs: [
+        ["Telemetry", 0, () => "Hard deg 0.035 s/lap, stable. Projected cliff after lap 45. Confidence 0.78."],
+        ["Engineer", 0, () => "No belief change."]],
+      decision: "STAY OUT" },
+  34: { trigger: "Stop 2 window opens", agents: ["Strategist", "Rival"], msgs: [
+        ["Rival", 0, () => "VER and PER expected to stop laps 36–38."],
+        ["Strategist", 0, () => "Plan A′ still best in sim: box lap 37 → MEDIUM."],
+        ["Engineer", 0, () => "Confirmed."]],
+      decision: "STAY OUT" },
+  37: { trigger: "Committed pit stop", agents: [], msgs: [
+        ["Engineer", 0, () => "Box, box. Mediums."]],
+      decision: "BOX → MEDIUM" },
+  46: { trigger: "Tyre age ≥ 9 on MEDIUM", agents: ["Telemetry"], msgs: [
+        ["Telemetry", 0, () => "Medium deg 0.055 s/lap. No cliff before the flag. Confidence 0.81."],
+        ["Engineer", 0, () => "Bring it home."]],
+      decision: "STAY OUT" },
+};
+// LLM calls: every agent message except the Engineer's scripted pit calls
+const callsAt = lap => Object.entries(EVENTS).filter(([l]) => +l <= lap)
+  .reduce((n, [, e]) => n + (e.agents.length ? e.msgs.length : 0), 0);
+const planAt = lap => { let p = null; for (const [l, e] of Object.entries(EVENTS)) if (+l <= lap && e.plan) p = e.plan; return p; };
+
+// ---------- Rendering ----------
+let run = "agent", lap = 15, timer = null;
+const $ = id => document.getElementById(id);
+const fmtLap = t => { const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(3).padStart(6, "0")}`; };
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function renderResult() {
+  const a = egoAt("agent", LAPS), r = egoAt("real", LAPS);
+  const delta = r.pos - a.pos;
+  const word = delta > 0 ? `+${delta} place${delta > 1 ? "s" : ""}` : delta < 0 ? `${delta} place${delta < -1 ? "s" : ""}` : "same place";
+  $("result").innerHTML = `<span>Agents: <b>P${a.pos}</b></span><span>Real: <b>P${r.pos}</b></span><span>Δ <b>${word}</b>, ${f1(r.cum - a.cum)} s</span>`;
+}
+
+function renderOrder() {
+  const rows = RUNS[run].laps[lap - 1];
+  $("order").innerHTML = rows.map(r => `
+    <tr class="${r.code === EGO ? "ego" : ""}">
+      <td>${r.pos}</td>
+      <td class="name">${r.code}${r.pitIn ? '<span class="pitflag">PIT</span>' : ""}</td>
+      <td class="num">${r.gapAhead == null ? "Leader" : "+" + f1(r.gapAhead)}</td>
+      <td class="num">${fmtLap(r.last)}</td>
+      <td><span class="tyre ${r.compound}" title="${r.compound}">${r.compound[0]}</span></td>
+      <td class="num">${r.age}</td>
+      <td class="num">${r.stops}</td>
+    </tr>`).join("");
+}
+
+function renderAgents() {
+  const box = $("agentpanel");
+  if (run === "real") {
+    $("calls").textContent = "0 LLM calls";
+    box.innerHTML = `<p class="idle">Real strategy run: no agents. This replays what LEC actually did, as a reference for the agents' run.</p>`;
+    return;
+  }
+  $("calls").textContent = `${callsAt(lap)} LLM calls so far`;
+  const e = EVENTS[lap];
+  const plan = planAt(lap);
+  const all = ["Telemetry", "Rival", "Strategist"];
+  const names = { Telemetry: "Telemetry Analyst", Rival: "Rival Modeler", Strategist: "Strategist", Engineer: "Race Engineer" };
+  let html = "";
+  if (e) {
+    html += `<div class="trigger"><span class="label">Trigger</span><span>${esc(e.trigger)}</span></div>`;
+    html += `<div class="agents">${all.map(a => `<span class="chip ${e.agents.includes(a) ? "on" : ""}">${names[a]}</span>`).join("")}</div>`;
+    html += `<div class="msgs">${e.msgs.map(([who, round, text]) => `
+      <div class="msg ${who === "Engineer" ? "engineer" : ""}">
+        <div class="who">${names[who]}${round ? ` <span class="round">· send-back round ${round}</span>` : ""}</div>
+        <p>${esc(text())}</p>
+      </div>`).join("")}</div>`;
+  } else {
+    html += `<div class="trigger"><span class="label">Trigger</span><span class="muted">None</span></div>`;
+    html += `<div class="agents">${all.map(a => `<span class="chip">${names[a]}</span>`).join("")}</div>`;
+    html += `<p class="idle">No event this lap. The Race Engineer keeps the committed plan without calling any agents.</p>`;
+  }
+  const call = e ? e.decision : "STAY OUT";
+  html += `<div class="decision"><span class="label">Call</span><span class="call ${call.startsWith("BOX") ? "box" : ""}">${call}</span></div>`;
+  if (plan) {
+    html += `<div class="plan"><span class="label">${plan === PLAN_B ? "Plan A′ (revised lap 14)" : "Plan A"}</span><span>${plan.main}</span><ul>${plan.cont.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>`;
+  }
+  box.innerHTML = html;
+}
+
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs, text) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); if (text != null) n.textContent = text; return n; };
+
+function renderTimeline() {
+  const rows = [
+    { label: "LEC agents", strat: AGENT_STRAT, ego: true },
+    { label: "LEC real", strat: RUNS.real.strat, ego: true },
+    ...DRIVERS.filter(d => d.code !== EGO).map(d => ({ label: d.code, strat: d.strat })),
+  ];
+  const W = 1000, L = 96, R = 12, rowH = 24, top = 8, H = top + rows.length * rowH + 26;
+  const x = l => L + (l - 1) / (LAPS - 1) * (W - L - R);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Tyre strategy by driver" });
+  const fill = { SOFT: "var(--soft)", MEDIUM: "var(--medium)", HARD: "var(--hard)" };
+  for (let t = 1; t <= LAPS; t += (t === 1 ? 9 : 10)) {
+    svg.append(el("line", { x1: x(t), x2: x(t), y1: top, y2: H - 22, stroke: "var(--line)", "stroke-width": 1 }));
+    svg.append(el("text", { x: x(t), y: H - 6, "text-anchor": "middle" }, t));
+  }
+  svg.append(el("text", { x: x(LAPS), y: H - 6, "text-anchor": "end" }, LAPS));
+  rows.forEach((r, k) => {
+    const y = top + k * rowH;
+    svg.append(el("text", { x: 0, y: y + 16, class: "rowlab" + (r.ego ? " ego" : "") }, r.label));
+    let start = 1;
+    r.strat.forEach(([c, end]) => {
+      svg.append(el("rect", { x: x(start), y: y + 5, width: Math.max(2, x(end) - x(start) - 2), height: 13, rx: 2, fill: fill[c], stroke: c === "HARD" ? "var(--hard-stroke)" : "none", "stroke-width": 1 }));
+      start = end + 1;
+    });
+    if (k === 1) svg.append(el("line", { x1: L, x2: W - R, y1: y + rowH + 0.5, y2: y + rowH + 0.5, stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "2 3" }));
+  });
+  svg.append(el("line", { x1: x(lap), x2: x(lap), y1: top - 4, y2: H - 22, stroke: "var(--accent)", "stroke-width": 2 }));
+  $("timeline").replaceChildren(svg);
+}
+
+function renderGaps() {
+  const W = 1000, H = 230, L = 40, R = 12, T = 10, B = 26, MAX = 25;
+  const x = l => L + (l - 1) / (LAPS - 1) * (W - L - R);
+  const y = v => T + (1 - Math.min(v, MAX) / MAX) * (H - T - B);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "LEC gap to the cars ahead and behind" });
+  for (let v = 0; v <= MAX; v += 5) {
+    svg.append(el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "var(--line)", "stroke-width": 1 }));
+    svg.append(el("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, v));
+  }
+  for (let t = 1; t <= LAPS; t += (t === 1 ? 9 : 10)) svg.append(el("text", { x: x(t), y: H - 6, "text-anchor": "middle" }, t));
+  svg.append(el("text", { x: x(LAPS), y: H - 6, "text-anchor": "end" }, LAPS));
+  RUNS[run].strat.slice(0, -1).forEach(([, end]) =>
+    svg.append(el("line", { x1: x(end), x2: x(end), y1: T, y2: H - B, stroke: "var(--box)", "stroke-width": 1.5, "stroke-dasharray": "4 4" })));
+  const series = (key, color, w) => {
+    const pts = [];
+    for (let l = 1; l <= LAPS; l++) { const v = egoAt(run, l)[key]; if (v != null) pts.push(`${x(l).toFixed(1)},${y(v).toFixed(1)}`); }
+    svg.append(el("polyline", { points: pts.join(" "), fill: "none", stroke: color, "stroke-width": w, "stroke-linejoin": "round" }));
+  };
+  series("gapBehind", "var(--muted)", 1.5);
+  series("gapAhead", "var(--accent)", 2.5);
+  svg.append(el("line", { x1: x(lap), x2: x(lap), y1: T, y2: H - B, stroke: "var(--fg)", "stroke-width": 1, opacity: 0.35 }));
+  const e = egoAt(run, lap);
+  if (e.gapAhead != null) svg.append(el("circle", { cx: x(lap), cy: y(e.gapAhead), r: 5, fill: "var(--accent)", stroke: "var(--panel)", "stroke-width": 2 }));
+  svg.append(el("text", { x: W - R, y: T + 12, "text-anchor": "end" }, `capped at ${MAX} s`));
+  $("gaps").replaceChildren(svg);
+}
+
+function render() {
+  $("lap").value = lap;
+  $("lapnum").textContent = lap;
+  renderOrder(); renderAgents(); renderTimeline(); renderGaps();
+}
+
+$("lap").addEventListener("input", e => { lap = +e.target.value; render(); });
+const setRun = r => { run = r; $("runAgent").setAttribute("aria-pressed", r === "agent"); $("runReal").setAttribute("aria-pressed", r === "real"); render(); };
+$("runAgent").addEventListener("click", () => setRun("agent"));
+$("runReal").addEventListener("click", () => setRun("real"));
+$("play").addEventListener("click", () => {
+  if (timer) { clearInterval(timer); timer = null; $("play").textContent = "Play"; return; }
+  if (lap >= LAPS) lap = 1;
+  $("play").textContent = "Pause";
+  timer = setInterval(() => {
+    if (lap >= LAPS) { clearInterval(timer); timer = null; $("play").textContent = "Play"; return; }
+    lap++; render();
+  }, 450);
+});
+
+renderResult();
+render();
+</script>
