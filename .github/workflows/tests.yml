@@ -1,0 +1,24 @@
+# Runs pytest on every PR and on pushes to main. The checks show up as
+# "pytest (3.11)" and "pytest (3.12)"; require both in the main branch ruleset.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]  # 3.11 is the minimum in pyproject.toml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      # Package + pytest only; the full dev extra pulls in jupyter, which tests don't need.
+      - run: pip install -e . pytest
+      - run: pytest -v
