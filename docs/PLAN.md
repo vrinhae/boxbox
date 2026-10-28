@@ -17,7 +17,7 @@ Done when `get_state("2023_bahrain", 20, "VER")` returns a correct snapshot and 
 - [x] `.gitignore` entry for `data/cache/` and `logs/`
 - [x] `tools/jsonl_log.py`: JSONL logger (timestamp, race, lap, event type + fields; see Replay viewer)
 - [x] `tools/query.py`: `query_laps`, `get_race_control`, built against a hand-made fake `LapSnapshot`
-- [ ] One LLM call that uses a tool, logged to JSONL
+- [x] One LLM call that uses a tool, logged to JSONL (`python -m agents.ask "..."`)
 
 Done when an LLM calls `query_laps` on the fake snapshot and the call appears in the log.
 
