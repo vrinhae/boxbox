@@ -27,3 +27,6 @@ Multi-agent LLM system that makes lap-by-lap F1 pit-stop decisions on replayed h
 data/ sim/ agents/ tools/ baselines/ eval/ notebooks/
 ## Plan
 See docs/PLAN.md for this week's tasks, owners, interfaces, and decisions. Update it in the same PR as the work.
+
+## Open questions
+docs/PLAN.md has an "Open questions" section. At the start of a session, if any open question affects the user's area (see CLAUDE.local.md, or the owners in docs/PLAN.md) or the task they ask for, briefly raise it and ask them to decide before starting that work. When decided, move the outcome to the decisions log and delete the question.

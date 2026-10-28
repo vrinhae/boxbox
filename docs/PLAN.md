@@ -80,6 +80,33 @@ Log events the viewer needs (`tools/jsonl_log.py` must support these from week 1
 
 Not in the Must tier: build v1 only once the Must items are done (end of week 5).
 
+## Open questions
+
+Raised but not decided. Decide together, then move the outcome to the decisions log and delete the question here.
+
+### Q1. Where does race data come from? (Aidan; affects #2–#5)
+FastF1 fails on school Wi-Fi for both of us: F1's server returns HTTP 401 (CloudFront). FastF1 issues #916/#917 report F1 blocking some networks since May 2026; FastF1 3.8.3 has no fix.
+- Option A: FastF1 from a hotspot or home network (covers 2018 onward).
+- Option B: OpenF1 (`api.openf1.org`), which works on school Wi-Fi (covers 2023 onward; laps, stints, pit, race_control, position, intervals).
+- Either way: commit the processed per-lap files so nobody needs a data server again (campus, grading, demo day).
+- `CLAUDE.md` says "FastF1"; update it if we switch.
+
+### Q2. Loader should take any race (Aidan; #2)
+We want a historical library to browse old races, not just one test race. Write the loader as e.g. `load_race(year, event)` rather than hard-coding Bahrain. No extra work if done from the start.
+
+### Q3. Which races do we evaluate on? (both)
+LLMs may remember real races from their training data (gpt-4o-mini's data ends around late 2023), so an agent could "recall" the real strategy for 2023 Bahrain. The no-lookahead rule can't block that.
+- Proposal: library = any race; **evaluation = races after the model's training cutoff** (2025–2026).
+- Candidate first race: **2026 US GP, Austin** (OpenF1 `session_key=11396`; 22 drivers, 56 laps, stints, 32 pit stops, race control all present).
+- Real data has oddities the loader should flag: in that race car 18 has a 1-lap stint on lap 1, car 87's stints end at lap 24 (likely DNF). Some will be real events, some data errors.
+- Stretch idea: compare old races, old races with names hidden ("Driver A", "Circuit X"), and post-cutoff races to measure how much LLM memory inflates results.
+
+### Q4. Agent framework (both; #10)
+Proposal: own loop (plain Python over the `openai` SDK). `agents/ask.py` is the working tool-use loop it would grow from; routing, send-back (max 2 rounds) and the committed plan become ordinary functions and loops. Read it together and close #10 if it looks easy to extend.
+
+### Q5. Viewer race picker (Valarie, week 6)
+The viewer only shows races that have been run (it reads `logs/`), so it needs dropdowns for race, driver and system built from the log files. The mockup is missing this. Races are run from the terminal, e.g. `python -m eval.run --race 2026_austin --driver LEC --system multi_agent`.
+
 ## Decisions log
 - 2026-10-15: First race is 2023 Bahrain (dry, normal strategies).
 - 2026-10-15: `LapSnapshot` is frozen and rejects records after `lap` on construction.
