@@ -3,7 +3,8 @@
 This is the basic tool-use loop every agent will build on:
   1. send the question plus the tool list
   2. if the LLM asks for tools, run them and send the results back
-  3. repeat until it answers in plain text (or max_rounds is hit)
+  3. repeat until it answers in plain text; the last of max_rounds offers no tools,
+     so the LLM has to answer with what it has
 Every LLM reply is logged as agent_msg and every tool run as tool_call.
 
 Run it (uses the fake race until data/state.py lands):
@@ -50,16 +51,25 @@ def ask(
     ]
 
     for round_ in range(1, max_rounds + 1):
-        reply = client.chat.completions.create(model=model, messages=messages, tools=TOOL_SPECS)
+        final = round_ == max_rounds
+        # On the last round the tools stay listed (the history contains tool calls),
+        # but tool_choice="none" makes the LLM answer with what it already has.
+        extra = {"tool_choice": "none"} if final else {}
+        reply = client.chat.completions.create(model=model, messages=messages, tools=TOOL_SPECS, **extra)
         msg = reply.choices[0].message
         calls = msg.tool_calls or []
+        usage = getattr(reply, "usage", None)  # some OpenRouter providers omit it
         log_event(snap.race_id, snap.lap, "agent_msg", run_id=run_id, log_dir=log_dir,
                   agent=agent, round=round_, model=model, content=msg.content,
                   tool_calls=[c.function.name for c in calls],
-                  tokens_in=reply.usage.prompt_tokens, tokens_out=reply.usage.completion_tokens)
+                  tokens_in=getattr(usage, "prompt_tokens", None),
+                  tokens_out=getattr(usage, "completion_tokens", None))
 
         if not calls:
             return msg.content or ""
+        if final:
+            # Provider ignored tool_choice. Don't run tools whose results could never be sent back.
+            break
 
         # Echo the assistant's tool request back, then answer each call with its result.
         messages.append({
