@@ -5,7 +5,7 @@ Owners: **Valarie**, **Aidan**. Update this file in the same PR as the work it d
 ## Current week: Week 1
 
 ### Aidan: data layer
-- [ ] `data/loader.py`: load the first 2026 race (see decisions log) with FastF1, clean it, save per-lap parquet to `data/cache/`
+- [ ] `data/loader.py`: load the first 2026 race (see decisions log) with FastF1, clean it, save per-lap parquet to `data/races/<race_id>/` (committed; `data/cache/` is only FastF1's raw download cache and stays gitignored)
 - [ ] `data/state.py`: `get_state(race_id, lap, ego_driver) -> LapSnapshot`
 - [ ] `tests/test_no_lookahead.py`: snapshot at lap N contains nothing after lap N
 - [ ] Notebook: lap time vs tyre age per compound (inputs for the week 2 sim fit)
@@ -91,12 +91,13 @@ We want a historical library to browse old races, not just one test race. Write 
 The viewer only shows races that have been run (it reads `logs/`), so it needs dropdowns for race, driver and system built from the log files. The mockup is missing this. Races are run from the terminal, e.g. `python -m eval.run --race 2026_austin --driver LEC --system multi_agent`.
 
 ## Decisions log
-- 2026-10-15: ~~First race is 2023 Bahrain~~ (replaced 2026-11-06: 2026 races only, see below).
+- 2026-10-15: ~~First race is 2023 Bahrain~~ (replaced 2026-11-06: post-cutoff 2026 races, see below).
 - 2026-10-15: `LapSnapshot` is frozen and rejects records after `lap` on construction.
 - 2026-10-15: Strategist uses deterministic `simulate` calls for Must tier; Monte Carlo is stretch.
 - 2026-10-15: LLM calls go through OpenRouter via the `openai` SDK; model set by `PITWALL_MODEL` in `.env`.
 - 2026-10-15: Add a Streamlit replay viewer that reads JSONL logs only; weeks 6–7.
 - 2026-10-15: One ego driver per run; all other cars replay their real race. Once the ego strategy diverges from reality, ego laps come from the sim and positions/gaps are recomputed, so from week 2 `get_state` builds snapshots from real rival data + simulated ego laps. Run 2–3 ego drivers per race; every system uses the same race/driver pairs.
-- 2026-11-06: Race data comes from FastF1 (#16). School Wi-Fi is blocked (HTTP 401 from F1's CloudFront; FastF1 issues #916/#917), so download off campus (home or hotspot) and commit the processed per-lap files, so nobody needs F1's server again (campus, grading, demo day). Fallback if FastF1 is blocked off campus too: OpenF1 (2023 onward, works on school Wi-Fi).
-- 2026-11-06: Evaluate on 2026 races only (#18). LLMs may remember earlier races from training data, which the no-lookahead rule can't block; 2026 is after the training cutoff of any model we're likely to use. First development race: a clean dry 2026 race (Aidan picks; not Austin, whose data has a 1-lap stint on lap 1 and a DNF). Older races are fine for browsing in the library. Stretch: measure LLM memory by comparing old races, old races with names hidden, and 2026 races.
+- 2026-11-06: Race data comes from FastF1 (#16). School Wi-Fi is blocked (HTTP 401 from F1's CloudFront; FastF1 issues #916/#917), so download off campus (home or hotspot) and commit the processed per-lap files in `data/races/<race_id>/`, so nobody needs F1's server again (campus, grading, demo day). Fallback if FastF1 is blocked off campus too: OpenF1 (2023 onward, works on school Wi-Fi).
+- 2026-11-06: Evaluate only on races after the training cutoff of the model we evaluate with (#18). LLMs may remember earlier races from training data, which the no-lookahead rule can't block. Newer models can have cutoffs well into 2026, so in practice that means late-2026 races; record the evaluation model and its cutoff here once chosen. Development model `openai/gpt-4o-mini` (cutoff around late 2023) can use any 2026 race. First development race: a clean dry 2026 race (Aidan picks; not Austin, whose data has a 1-lap stint on lap 1 and a DNF). Older races are fine for browsing in the library. Stretch: measure LLM memory by comparing old races, old races with names hidden, and 2026 races.
 - 2026-11-06: Agent framework is our own loop (#10): plain Python over the `openai` SDK, growing from `agents/ask.py`. No LangGraph.
+- TODO: evaluation model and its training cutoff (decides which 2026 races are eligible).
