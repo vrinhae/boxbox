@@ -1,15 +1,19 @@
-"""Loader tests on a tiny hand-made OpenF1 response: no network.
+"""Loader tests on one tiny hand-made race, as OpenF1 and as FastF1 would serve it: no network.
 
 The race: 3 laps, three cars. AAA leads throughout. BBB pits at the end of
 lap 1 (soft -> hard). CCC retires on lap 3 (OpenF1 lists the lap with no
-duration). A VSC runs during lap 2.
+duration; FastF1 lists it with no end time). A VSC runs during lap 2.
 """
+
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
-from data.loader import build_race, find_session, read_race, status_periods
+from data.loader import load_race, read_race
 from data.schema import TrackStatus
+from data.sources import fastf1 as ff1_source
+from data.sources.openf1 import build_race, find_session, status_periods
 
 START = pd.Timestamp("2026-06-28T13:00:00Z")
 SESSION = {"year": 2026, "location": "São Paulo", "country_name": "Brazil", "circuit_short_name": "Interlagos",
@@ -147,3 +151,92 @@ def test_committed_races_are_consistent(race_id):
         assert list(g.sort_values("lap")["lap"]) == list(range(1, len(g) + 1))
     assert laps["lap"].max() == meta["total_laps"]
     assert set(laps["driver"]) <= set(meta["drivers"])
+
+
+# ---------- FastF1: the same race as a stand-in FastF1 session ----------
+
+T0 = pd.Timedelta(seconds=1000)  # session time when lap 1 starts
+NAT = pd.NaT
+
+
+def ff_lap(code, number, n, start, end, lap_time, compound, life, stint, status="1", pit_in=False, pit_out=None):
+    s = lambda x: NAT if x is None else T0 + pd.Timedelta(seconds=x)  # noqa: E731
+    return {
+        "Driver": code, "DriverNumber": str(number), "LapNumber": float(n), "LapStartTime": s(start), "Time": s(end),
+        "LapTime": NAT if lap_time is None else pd.Timedelta(seconds=lap_time), "Compound": compound, "TyreLife": float(life),
+        "Stint": float(stint), "PitInTime": s(end - 2) if pit_in else NAT, "PitOutTime": s(pit_out),
+        "TrackStatus": status, "IsAccurate": True, "FastF1Generated": False,
+    }
+
+
+FF1_LAPS = pd.DataFrame([
+    ff_lap("AAA", 1, 1, 0, 90, 90.0, "MEDIUM", 1, 1, pit_out=-600),  # left the garage before the formation lap
+    ff_lap("AAA", 1, 2, 90, 185, 95.0, "MEDIUM", 2, 1, status="167"),
+    ff_lap("AAA", 1, 3, 185, 274, 89.0, "MEDIUM", 3, 1),
+    ff_lap("BBB", 2, 1, 0, 111, 111.0, "SOFT", 4, 1, pit_in=True),
+    ff_lap("BBB", 2, 2, 111, 207, 96.0, "HARD", 1, 2, status="16", pit_out=125),
+    ff_lap("BBB", 2, 3, 207, 297, 90.0, "HARD", 2, 2),
+    ff_lap("CCC", 3, 1, 0, 92, 92.0, "MEDIUM", 1, 1),
+    ff_lap("CCC", 3, 2, 92, 187.5, 95.5, "MEDIUM", 2, 1, status="167"),
+    {**ff_lap("CCC", 3, 3, 187.5, 200, None, "MEDIUM", 3, 1), "Time": NAT},  # retired: never completed
+])
+
+
+def ff_session(laps=FF1_LAPS):
+    utc = lambda x: (START + pd.Timedelta(seconds=x)).tz_convert(None)  # FastF1 gives naive UTC  # noqa: E731
+    rc = pd.DataFrame([
+        {"Time": utc(-60), "Category": "Flag", "Message": "GREEN LIGHT - PIT EXIT OPEN", "Flag": "GREEN", "Scope": "Track", "Sector": None, "RacingNumber": None, "Lap": 1},
+        {"Time": utc(120), "Category": "SafetyCar", "Message": "VSC DEPLOYED", "Flag": None, "Scope": "Track", "Sector": None, "RacingNumber": None, "Lap": 2},
+        {"Time": utc(150), "Category": "SafetyCar", "Message": "VSC ENDING", "Flag": None, "Scope": "Track", "Sector": None, "RacingNumber": None, "Lap": 2},
+        {"Time": utc(274), "Category": "Flag", "Message": "CHEQUERED FLAG", "Flag": "CHEQUERED", "Scope": "Track", "Sector": None, "RacingNumber": None, "Lap": 3},
+    ])
+    results = pd.DataFrame([
+        {"DriverNumber": "1", "Abbreviation": "AAA", "TeamName": "Team A", "FullName": "Ann A", "Position": 1.0, "ClassifiedPosition": "1", "Laps": 3.0, "Points": 25.0},
+        {"DriverNumber": "2", "Abbreviation": "BBB", "TeamName": "Team B", "FullName": "Bob B", "Position": 2.0, "ClassifiedPosition": "2", "Laps": 3.0, "Points": 18.0},
+        {"DriverNumber": "3", "Abbreviation": "CCC", "TeamName": "Team C", "FullName": "Cat C", "Position": 3.0, "ClassifiedPosition": "R", "Laps": 2.0, "Points": 0.0},
+    ])
+    return SimpleNamespace(
+        laps=laps, results=results, race_control_messages=rc, weather_data=pd.DataFrame({"Rainfall": [False]}),
+        event=pd.Series({"EventDate": pd.Timestamp("2026-06-28"), "Location": "São Paulo", "Country": "Brazil"}),
+        session_info={"Key": 9000, "Meeting": {"Circuit": {"ShortName": "Interlagos"}}}, date=pd.Timestamp("2026-06-28 13:00"),
+    )
+
+
+@pytest.fixture(scope="module")
+def built_ff1():
+    return ff1_source.build_race(ff_session())
+
+
+def test_fastf1_and_openf1_give_the_same_laps(built, built_ff1):
+    pd.testing.assert_frame_equal(built_ff1[0], built[0], check_dtype=False)
+
+
+def test_fastf1_meta_matches_openf1(built, built_ff1):
+    skip = {"source", "session_key", "fetched"}
+    assert {k: v for k, v in built_ff1[3].items() if k not in skip} == {k: v for k, v in built[3].items() if k not in skip}
+    assert built_ff1[3]["source"] == "fastf1"
+
+
+def test_fastf1_race_control_lined_up_on_chequered_flag(built_ff1):
+    rc = built_ff1[1].set_index("message")
+    assert rc.loc["VSC DEPLOYED", "time"] == 120.0 and rc.loc["GREEN LIGHT - PIT EXIT OPEN", "time"] == -60.0
+
+
+def test_fastf1_results(built_ff1):
+    results = built_ff1[2].set_index("driver")
+    assert results.loc["CCC", "dnf"] and pd.isna(results.loc["CCC", "position"])
+    assert results.loc["AAA", "position"] == 1 and not results.loc["AAA", "dnf"]
+
+
+def test_fastf1_drops_generated_laps_and_keeps_pit_lane_starts():
+    laps = FF1_LAPS.copy()
+    laps.loc[0, "PitOutTime"] = T0 + pd.Timedelta(seconds=20)  # AAA starts from the pit lane
+    extra = {**ff_lap("CCC", 3, 3, 187.5, 280, 92.5, "MEDIUM", 3, 1), "FastF1Generated": True}
+    built = ff1_source.build_race(ff_session(pd.concat([laps, pd.DataFrame([extra])], ignore_index=True)))[0]
+    assert row(built, "AAA", 1).pit_out
+    assert 3 not in set(built.loc[built["driver"] == "CCC", "lap"])
+
+
+def test_unknown_source_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="unknown source"):
+        load_race(2026, "Spielberg", source="ergast", races_dir=tmp_path)
