@@ -107,6 +107,13 @@ Proposal: own loop (plain Python over the `openai` SDK). `agents/ask.py` is the 
 ### Q5. Viewer race picker (Valarie, week 6)
 The viewer only shows races that have been run (it reads `logs/`), so it needs dropdowns for race, driver and system built from the log files. The mockup is missing this. Races are run from the terminal, e.g. `python -m eval.run --race 2026_austin --driver LEC --system multi_agent`.
 
+### Q6. Optimiser baseline (both; Should tier, after the simulator)
+A non-LLM baseline that, each lap, tries every remaining pit lap and compound in the simulator and picks the lowest predicted race time. It answers "do we need LLM agents, or does plain optimisation do as well?", which the rule-based baseline can't.
+- Same lookahead rules as the agents: tyre wear fitted only from laps so far (or pre-race data), never the full race.
+- Same simulator as the agents' `simulate` tool, so the comparison is fair.
+- A fitted formula (base + wear × tyre age + fuel + pit loss) is enough; an ML lap-time model (XGBoost etc.) would overfit 8–10 races and is harder to validate.
+- Valarie: yes. Aidan: ?
+
 ## Decisions log
 - 2026-10-15: First race is 2023 Bahrain (dry, normal strategies).
 - 2026-10-15: `LapSnapshot` is frozen and rejects records after `lap` on construction.
