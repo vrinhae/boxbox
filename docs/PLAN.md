@@ -5,7 +5,7 @@ Owners: **Valarie**, **Aidan**. Update this file in the same PR as the work it d
 ## Current week: Week 1
 
 ### Aidan: data layer
-- [ ] `data/loader.py`: load the first 2026 race (see decisions log) with FastF1, clean it, save per-lap parquet to `data/races/<race_id>/` (committed; `data/cache/` is only FastF1's raw download cache and stays gitignored)
+- [ ] `data/loader.py`: load the first 2026 race (see decisions log) from OpenF1, clean it, save per-lap parquet to `data/races/<race_id>/` (committed; `data/cache/` holds raw downloads and stays gitignored)
 - [ ] `data/state.py`: `get_state(race_id, lap, ego_driver) -> LapSnapshot`
 - [ ] `tests/test_no_lookahead.py`: snapshot at lap N contains nothing after lap N
 - [ ] Notebook: lap time vs tyre age per compound (inputs for the week 2 sim fit)
@@ -32,7 +32,7 @@ Shared contract: `data/schema.py` (`LapSnapshot`). Changes to it get their own s
 # data/state.py (Aidan)
 def get_state(race_id: str, lap: int, ego_driver: str) -> LapSnapshot: ...
 
-# tools/query.py (Valarie): take a snapshot, never touch FastF1 or the cache
+# tools/query.py (Valarie): take a snapshot, never touch raw race data or the cache
 def query_laps(snap: LapSnapshot, driver: str | None = None, last_n: int | None = None) -> list[dict]: ...
 def get_race_control(snap: LapSnapshot) -> list[dict]: ...
 
@@ -97,7 +97,7 @@ The viewer only shows races that have been run (it reads `logs/`), so it needs d
 - 2026-10-15: LLM calls go through OpenRouter via the `openai` SDK; model set by `PITWALL_MODEL` in `.env`.
 - 2026-10-15: Add a Streamlit replay viewer that reads JSONL logs only; weeks 6–7.
 - 2026-10-15: One ego driver per run; all other cars replay their real race. Once the ego strategy diverges from reality, ego laps come from the sim and positions/gaps are recomputed, so from week 2 `get_state` builds snapshots from real rival data + simulated ego laps. Run 2–3 ego drivers per race; every system uses the same race/driver pairs.
-- 2026-11-06: Race data comes from FastF1 (#16). School Wi-Fi is blocked (HTTP 401 from F1's CloudFront; FastF1 issues #916/#917), so download off campus (home or hotspot) and commit the processed per-lap files in `data/races/<race_id>/`, so nobody needs F1's server again (campus, grading, demo day). Fallback if FastF1 is blocked off campus too: OpenF1 (2023 onward, works on school Wi-Fi).
+- 2026-11-18: Race data comes from OpenF1 (#16), built by `python -m data.loader <year> <event>` into `data/races/<race_id>/`, which is committed so nobody needs a data server again (campus, grading, demo day). FastF1 3.9 needs an F1 TV subscription for all timing data (that was the HTTP 401, not the Wi-Fi). Valarie has F1 TV, so FastF1 builds (`--source fastf1`) are used locally to validate new races but never committed, since the repo is public. On 2026 Spielberg the two sources matched on every lap, position, tyre and stint; FastF1 additionally caught 3 pit-lane visits without a tyre change and VSC laps up to the green flag.
 - 2026-11-06: Evaluate only on races after the training cutoff of the model we evaluate with (#18). LLMs may remember earlier races from training data, which the no-lookahead rule can't block. Newer models can have cutoffs well into 2026, so in practice that means late-2026 races; record the evaluation model and its cutoff here once chosen. Development model `openai/gpt-4o-mini` (cutoff around late 2023) can use any 2026 race. First development race: a clean dry 2026 race (Aidan picks; not Austin, whose data has a 1-lap stint on lap 1 and a DNF). Older races are fine for browsing in the library. Stretch: measure LLM memory by comparing old races, old races with names hidden, and 2026 races.
 - 2026-11-06: Agent framework is our own loop (#10): plain Python over the `openai` SDK, growing from `agents/ask.py`. No LangGraph.
 - TODO: evaluation model and its training cutoff (decides which 2026 races are eligible).
