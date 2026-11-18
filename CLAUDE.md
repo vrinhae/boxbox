@@ -3,7 +3,7 @@
 Multi-agent LLM system that makes lap-by-lap F1 pit-stop decisions on replayed historical races (Multi-Agent Systems final project, 7 weeks, 2 people).
 
 ## Core rules
-- Agents may only see data up to the current lap. Never give agents FastF1 or the full-session cache; serve pre-sliced per-lap snapshots.
+- Agents may only see data up to the current lap. Never give agents raw race data (OpenF1/FastF1 responses, `data/races/` files, or the cache); serve pre-sliced per-lap snapshots.
 - Python 3.11+, developed in WSL.
 
 ## Agents

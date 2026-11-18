@@ -5,12 +5,12 @@ Owners: **Valarie**, **Aidan**. Update this file in the same PR as the work it d
 ## Current week: Week 1
 
 ### Aidan: data layer
-- [ ] `data/loader.py`: load 2023 Bahrain with FastF1, clean it, save per-lap parquet to `data/cache/`
+- [ ] `data/loader.py`: load the first 2026 race (see decisions log) from OpenF1, clean it, save per-lap parquet to `data/races/<race_id>/` (committed; `data/cache/` holds raw downloads and stays gitignored)
 - [ ] `data/state.py`: `get_state(race_id, lap, ego_driver) -> LapSnapshot`
 - [ ] `tests/test_no_lookahead.py`: snapshot at lap N contains nothing after lap N
 - [ ] Notebook: lap time vs tyre age per compound (inputs for the week 2 sim fit)
 
-Done when `get_state("2023_bahrain", 20, "VER")` returns a correct snapshot and the test passes.
+Done when `get_state("2026_<race>", 20, "VER")` returns a correct snapshot and the test passes.
 
 ### Valarie: setup + plumbing
 - [x] `pyproject.toml` (Python 3.11+, fastf1, pandas, pyarrow, pytest, LLM SDK + framework), setup steps in README
@@ -32,7 +32,7 @@ Shared contract: `data/schema.py` (`LapSnapshot`). Changes to it get their own s
 # data/state.py (Aidan)
 def get_state(race_id: str, lap: int, ego_driver: str) -> LapSnapshot: ...
 
-# tools/query.py (Valarie): take a snapshot, never touch FastF1 or the cache
+# tools/query.py (Valarie): take a snapshot, never touch raw race data or the cache
 def query_laps(snap: LapSnapshot, driver: str | None = None, last_n: int | None = None) -> list[dict]: ...
 def get_race_control(snap: LapSnapshot) -> list[dict]: ...
 
@@ -84,34 +84,20 @@ Not in the Must tier: build v1 only once the Must items are done (end of week 5)
 
 Raised but not decided. Decide together, then move the outcome to the decisions log and delete the question here.
 
-### Q1. Where does race data come from? (Aidan; affects #2–#5)
-FastF1 fails on school Wi-Fi for both of us: F1's server returns HTTP 401 (CloudFront). FastF1 issues #916/#917 report F1 blocking some networks since May 2026; FastF1 3.8.3 has no fix.
-- Option A: FastF1 from a hotspot or home network (covers 2018 onward).
-- Option B: OpenF1 (`api.openf1.org`), which works on school Wi-Fi (covers 2023 onward; laps, stints, pit, race_control, position, intervals).
-- Either way: commit the processed per-lap files so nobody needs a data server again (campus, grading, demo day).
-- `CLAUDE.md` says "FastF1"; update it if we switch.
-
 ### Q2. Loader should take any race (Aidan; #2)
 We want a historical library to browse old races, not just one test race. Write the loader as e.g. `load_race(year, event)` rather than hard-coding Bahrain. No extra work if done from the start.
-
-### Q3. Which races do we evaluate on? (both)
-LLMs may remember real races from their training data (gpt-4o-mini's data ends around late 2023), so an agent could "recall" the real strategy for 2023 Bahrain. The no-lookahead rule can't block that.
-- Proposal: library = any race; **evaluation = races after the model's training cutoff** (2025–2026).
-- Candidate first race: **2026 US GP, Austin** (OpenF1 `session_key=11396`; 22 drivers, 56 laps, stints, 32 pit stops, race control all present).
-- Real data has oddities the loader should flag: in that race car 18 has a 1-lap stint on lap 1, car 87's stints end at lap 24 (likely DNF). Some will be real events, some data errors.
-- Stretch idea: compare old races, old races with names hidden ("Driver A", "Circuit X"), and post-cutoff races to measure how much LLM memory inflates results.
-
-### Q4. Agent framework (both; #10)
-Proposal: own loop (plain Python over the `openai` SDK). `agents/ask.py` is the working tool-use loop it would grow from; routing, send-back (max 2 rounds) and the committed plan become ordinary functions and loops. Read it together and close #10 if it looks easy to extend.
 
 ### Q5. Viewer race picker (Valarie, week 6)
 The viewer only shows races that have been run (it reads `logs/`), so it needs dropdowns for race, driver and system built from the log files. The mockup is missing this. Races are run from the terminal, e.g. `python -m eval.run --race 2026_austin --driver LEC --system multi_agent`.
 
 ## Decisions log
-- 2026-10-15: First race is 2023 Bahrain (dry, normal strategies).
+- 2026-10-15: ~~First race is 2023 Bahrain~~ (replaced 2026-11-06: post-cutoff 2026 races, see below).
 - 2026-10-15: `LapSnapshot` is frozen and rejects records after `lap` on construction.
 - 2026-10-15: Strategist uses deterministic `simulate` calls for Must tier; Monte Carlo is stretch.
 - 2026-10-15: LLM calls go through OpenRouter via the `openai` SDK; model set by `PITWALL_MODEL` in `.env`.
-- TODO: agent framework (own loop vs LangGraph); confirm with Aidan.
 - 2026-10-15: Add a Streamlit replay viewer that reads JSONL logs only; weeks 6–7.
 - 2026-10-15: One ego driver per run; all other cars replay their real race. Once the ego strategy diverges from reality, ego laps come from the sim and positions/gaps are recomputed, so from week 2 `get_state` builds snapshots from real rival data + simulated ego laps. Run 2–3 ego drivers per race; every system uses the same race/driver pairs.
+- 2026-11-18: Race data comes from OpenF1 (#16), built by `python -m data.loader <year> <event>` into `data/races/<race_id>/`, which is committed so nobody needs a data server again (campus, grading, demo day). FastF1 3.9 needs an F1 TV subscription for all timing data (that was the HTTP 401, not the Wi-Fi). Valarie has F1 TV, so FastF1 builds (`--source fastf1`) are used locally to validate new races but never committed, since the repo is public. On 2026 Spielberg the two sources matched on every lap, position, tyre and stint; FastF1 additionally caught 3 pit-lane visits without a tyre change and VSC laps up to the green flag.
+- 2026-11-06: Evaluate only on races after the training cutoff of the model we evaluate with (#18). LLMs may remember earlier races from training data, which the no-lookahead rule can't block. Newer models can have cutoffs well into 2026, so in practice that means late-2026 races; record the evaluation model and its cutoff here once chosen. Development model `openai/gpt-4o-mini` (cutoff around late 2023) can use any 2026 race. First development race: a clean dry 2026 race (Aidan picks; not Austin, whose data has a 1-lap stint on lap 1 and a DNF). Older races are fine for browsing in the library. Stretch: measure LLM memory by comparing old races, old races with names hidden, and 2026 races.
+- 2026-11-06: Agent framework is our own loop (#10): plain Python over the `openai` SDK, growing from `agents/ask.py`. No LangGraph.
+- TODO: evaluation model and its training cutoff (decides which 2026 races are eligible).
